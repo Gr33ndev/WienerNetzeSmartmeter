@@ -18,7 +18,6 @@ of pure API-client code.
 from __future__ import annotations
 
 import importlib.util
-import os
 import sys
 import types
 from datetime import date, datetime, timedelta
