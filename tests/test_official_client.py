@@ -24,6 +24,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import requests
 # ---------------------------------------------------------------------------
 # Bootstrap: load the three API submodules directly from their files so we
 # don't trigger ``wnsm/__init__.py`` (which imports ``homeassistant``).
@@ -96,16 +97,7 @@ _install_stub_module(
 )
 
 
-class _StubSmartmeter:
-    """Placeholder for the legacy scraper – the factory only needs the class
-    object to switch on, the test never instantiates it."""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.args = args
-        self.kwargs = kwargs
-
-
-_install_stub_module("wnsm.api.client", Smartmeter=_StubSmartmeter)
+_load_file("wnsm.api.client", _WNSM_ROOT / "api" / "client.py")
 
 # Load wnsm.const + client_factory from the real files now that all
 # cross-package imports resolve against the stubs above.
@@ -222,10 +214,12 @@ def test_login_missing_access_token_raises(requests_mock: Mocker):
         _make_client().login()
 
 
-def test_login_connection_error_raises_connection_error():
-    # Deliberately not using requests_mock: we want the underlying transport
-    # to actually fail so we can prove the exception gets wrapped.
-    client = _make_client(token_url="http://127.0.0.1:1/nope")
+@pytest.mark.usefixtures("requests_mock")
+def test_login_connection_error_raises_connection_error(requests_mock: Mocker):
+    requests_mock.post(
+        const.OFFICIAL_TOKEN_URL, exc=requests.exceptions.ConnectTimeout
+    )
+    client = _make_client()
     with pytest.raises(SmartmeterConnectionError):
         client.login()
 
@@ -724,7 +718,7 @@ def test_make_client_returns_shim_for_official():
 
 
 def test_make_client_returns_legacy_smartmeter_for_legacy():
-    from wnsm.api.client import Smartmeter as _StubSmartmeterRef
+    from wnsm.api.client import Smartmeter as _LegacySmartmeter
 
     legacy_entry: Dict[str, Any] = {
         CONF_AUTH_METHOD: AUTH_METHOD_LEGACY,
@@ -732,21 +726,20 @@ def test_make_client_returns_legacy_smartmeter_for_legacy():
         "password": "pass",  # noqa: S106 - test fixture
     }
     client = make_client(legacy_entry)
-    assert isinstance(client, _StubSmartmeterRef)
-    # Stub records the positional args so we can prove the factory
-    # forwarded the right fields.
-    assert client.args == ("user", "pass")
+    assert isinstance(client, _LegacySmartmeter)
+    assert client.username == "user"
+    assert client.password == "pass"
 
 
 def test_make_client_defaults_to_legacy_when_method_missing():
     """Entries created before the auth_method key was introduced must
     still resolve to the legacy scraper – otherwise upgrading the
     integration would break every existing install."""
-    from wnsm.api.client import Smartmeter as _StubSmartmeterRef
+    from wnsm.api.client import Smartmeter as _LegacySmartmeter
 
     entry: Dict[str, Any] = {"username": "u", "password": "p"}  # noqa: S106
     client = make_client(entry)
-    assert isinstance(client, _StubSmartmeterRef)
+    assert isinstance(client, _LegacySmartmeter)
 
 
 class _FakeOfficialClient:
