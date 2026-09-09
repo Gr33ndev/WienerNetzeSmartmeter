@@ -633,6 +633,10 @@ class Smartmeter:
             query=query,
             extra_headers=extra,
         )
-        if data["descriptor"]["zaehlpunktnummer"] != zaehlpunkt:
+        descriptor = data.get("descriptor")
+        if descriptor is None:
+            logger.warning("bewegungsdaten response for %s has no 'descriptor' field: %s", zaehlpunkt, data)
+            raise SmartmeterQueryError("Returned data is missing the 'descriptor' field!")
+        if descriptor.get("zaehlpunktnummer") != zaehlpunkt:
             raise SmartmeterQueryError("Returned data does not match given zaehlpunkt!")
         return data
