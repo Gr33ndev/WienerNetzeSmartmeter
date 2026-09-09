@@ -9,9 +9,11 @@ CONF_ZAEHLPUNKTE = "zaehlpunkte"
 # Configurable per config entry via the integration's Options flow
 # (Settings -> Devices & Services -> Wiener Netze Smartmeter -> Configure).
 # PRICE_PER_KWH below is only the fallback used when an entry has not set
-# one yet (e.g. entries created before this option existed).
+# one yet (e.g. entries created before this option existed). Defaults to 0
+# on purpose, so nobody gets someone else's tariff by accident — set your
+# real price via the Options flow.
 CONF_PRICE_PER_KWH = "price_per_kwh"
-PRICE_PER_KWH = 12.8272
+PRICE_PER_KWH = 0
 
 # --- Auth method selection (config flow) -----------------------------------
 CONF_AUTH_METHOD = "auth_method"
