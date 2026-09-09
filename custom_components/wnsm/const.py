@@ -5,6 +5,13 @@ DOMAIN = "wnsm"
 
 CONF_ZAEHLPUNKTE = "zaehlpunkte"
 
+# --- Cost tracking -----------------------------------------------------------
+# There is no config-flow field for this yet, so it is a plain constant.
+# Edit this to match your actual price per kWh (same currency/scale you would
+# enter in the Home Assistant Energy Dashboard's grid price field) if you want
+# the imported "<statistic_id>_cost" statistic to reflect your real tariff.
+PRICE_PER_KWH = 12.8272
+
 # --- Auth method selection (config flow) -----------------------------------
 CONF_AUTH_METHOD = "auth_method"
 
