@@ -619,7 +619,12 @@ class Smartmeter:
             "rolle": rolle,
             "zeitpunktVon": date_from.strftime("%Y-%m-%dT%H:%M:00.000Z"), # we catch up from the exact date of the last import to compensate for time shift
             "zeitpunktBis": date_until.strftime("%Y-%m-%dT23:59:59.999Z"),
-            "aggregat": aggregat or "NONE"
+            "aggregat": aggregat or "NONE",
+            # As of 2026-09, the API rejects requests without this parameter
+            # ("Required parameter 'wandler' is not present"). The official
+            # web portal sends "false" for standard (non-transformer-metered)
+            # Zaehlpunkte, which covers the common case here.
+            "wandler": "false",
         }
 
         extra = {
