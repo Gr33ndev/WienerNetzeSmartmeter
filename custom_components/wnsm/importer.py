@@ -20,19 +20,24 @@ from homeassistant.util.unit_conversion import EnergyConverter
 
 from .AsyncSmartmeter import AsyncSmartmeter
 from .api.constants import ValueType
-from .const import DOMAIN
+from .const import DOMAIN, PRICE_PER_KWH
 
 _LOGGER = logging.getLogger(__name__)
 
 class Importer:
 
-    def __init__(self, hass: HomeAssistant, async_smartmeter: AsyncSmartmeter, zaehlpunkt: str, unit_of_measurement: str, granularity: ValueType = ValueType.QUARTER_HOUR):
+    def __init__(self, hass: HomeAssistant, async_smartmeter: AsyncSmartmeter, zaehlpunkt: str, unit_of_measurement: str, granularity: ValueType = ValueType.QUARTER_HOUR, price_per_kwh: Decimal = None):
         self.id = f'{DOMAIN}:{zaehlpunkt.lower()}'
+        self.cost_id = f'{self.id}_cost'
         self.zaehlpunkt = zaehlpunkt
         self.granularity = granularity
         self.unit_of_measurement = unit_of_measurement
         self.hass = hass
         self.async_smartmeter = async_smartmeter
+        # Price used to derive the parallel "<id>_cost" statistic from the
+        # same per-period usage values as the energy statistic, so cost and
+        # energy always stay in sync (see PRICE_PER_KWH in const.py).
+        self.price_per_kwh = price_per_kwh if price_per_kwh is not None else Decimal(str(PRICE_PER_KWH))
 
     def is_last_inserted_stat_valid(self, last_inserted_stat):
         return len(last_inserted_stat) == 1 and len(last_inserted_stat[self.id]) == 1 and \
@@ -86,6 +91,18 @@ class Importer:
             {"sum", "state"},  # the fields we want to query (state might be used in the future)
         )
         _LOGGER.debug("Last inserted stat: %s" % last_inserted_stat)
+        # The cost statistic tracks its own running sum, seeded independently
+        # so it stays correct even if it was only added after energy import
+        # already had a history (starts at 0 in that case, same as any fresh
+        # external statistic would).
+        last_inserted_cost_stat = await get_instance(
+            self.hass
+        ).async_add_executor_job(
+            get_last_statistics, self.hass, 1, self.cost_id, True, {"sum"},
+        )
+        total_cost = Decimal(0)
+        if self.cost_id in last_inserted_cost_stat and len(last_inserted_cost_stat[self.cost_id]) == 1:
+            total_cost = Decimal(last_inserted_cost_stat[self.cost_id][0]["sum"])
         try:
             await self.async_smartmeter.login()
             zaehlpunkt = await (self.async_smartmeter.get_zaehlpunkt(self.zaehlpunkt))
@@ -97,13 +114,13 @@ class Importer:
             if not self.is_last_inserted_stat_valid(last_inserted_stat):
                 # No previous data - start from scratch
                 _LOGGER.warning("Starting import of historical data. This might take some time.")
-                _sum = await self._initial_import_statistics()
+                _sum = await self._initial_import_statistics(total_cost)
             else:
                 start_off_point = self.prepare_start_off_point(last_inserted_stat)
                 if start_off_point is None:
                     return
                 start, _sum = start_off_point
-                _sum = await self._incremental_import_statistics(start, _sum)
+                _sum = await self._incremental_import_statistics(start, _sum, total_cost)
 
             # XXX: Note that the state of this sensor must never be an integer value, such as 0!
             # If it is set to any number, home assistant will assume that a negative consumption
@@ -138,11 +155,22 @@ class Importer:
             has_sum=True,
         )
 
-    async def _initial_import_statistics(self):
-        return await self._import_statistics()
+    def get_cost_statistics_metadata(self):
+        return StatisticMetaData(
+            source=DOMAIN,
+            statistic_id=self.cost_id,
+            name=f"{self.zaehlpunkt} Cost",
+            unit_of_measurement="EUR",
+            mean_type=StatisticMeanType.NONE,
+            unit_class=None,
+            has_sum=True,
+        )
 
-    async def _incremental_import_statistics(self, start: datetime, total_usage: Decimal):
-        return await self._import_statistics(start=start, total_usage=total_usage)
+    async def _initial_import_statistics(self, total_cost: Decimal = Decimal(0)):
+        return await self._import_statistics(total_cost=total_cost)
+
+    async def _incremental_import_statistics(self, start: datetime, total_usage: Decimal, total_cost: Decimal = Decimal(0)):
+        return await self._import_statistics(start=start, total_usage=total_usage, total_cost=total_cost)
 
     async def _get_bewegungsdaten(self, start: datetime, end: datetime):
         data = await self.async_smartmeter.get_bewegungsdaten(self.zaehlpunkt, start, end, self.granularity)
@@ -154,7 +182,7 @@ class Importer:
             data = await self.async_smartmeter.get_bewegungsdaten(self.zaehlpunkt, start, end, ValueType.DAY)
         return data
 
-    async def _import_statistics(self, start: datetime = None, end: datetime = None, total_usage: Decimal = Decimal(0)) -> Optional[Decimal]:
+    async def _import_statistics(self, start: datetime = None, end: datetime = None, total_usage: Decimal = Decimal(0), total_cost: Decimal = Decimal(0)) -> Optional[Decimal]:
         """Import statistics"""
 
         start = start if start is not None else datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=365 * 3)
@@ -208,12 +236,20 @@ class Importer:
                 _LOGGER.debug(f"Not seen that before: Estimated Value found for {ts}: {reading}")
 
         statistics = []
+        cost_statistics = []
         metadata = self.get_statistics_metadata()
+        cost_metadata = self.get_cost_statistics_metadata()
 
         for ts, usage in sorted(dates.items(), key=itemgetter(0)):
             total_usage += usage
             statistics.append(StatisticData(start=ts, sum=total_usage, state=float(usage)))
+
+            cost = usage * self.price_per_kwh
+            total_cost += cost
+            cost_statistics.append(StatisticData(start=ts, sum=total_cost, state=float(cost)))
         if len(statistics) > 0:
             _LOGGER.debug(f"Importing statistics from {statistics[0]} to {statistics[-1]}")
         async_add_external_statistics(self.hass, metadata, statistics)
+        if len(cost_statistics) > 0:
+            async_add_external_statistics(self.hass, cost_metadata, cost_statistics)
         return total_usage
