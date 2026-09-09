@@ -20,10 +20,12 @@ from .const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_CUSTOMER_ID,
+    CONF_PRICE_PER_KWH,
     CONF_SCOPE,
     CONF_WEB_PROFILE_ID,
     CONF_ZAEHLPUNKTE,
     DOMAIN,
+    PRICE_PER_KWH,
 )
 from .utils import translate_dict
 
@@ -59,6 +61,13 @@ class WienerNetzeSmartMeterCustomConfigFlow(config_entries.ConfigFlow, domain=DO
     VERSION = 1
 
     data: Optional[dict[str, Any]]
+
+    @staticmethod
+    @config_entries.callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> "WienerNetzeSmartMeterOptionsFlow":
+        return WienerNetzeSmartMeterOptionsFlow(config_entry)
 
     # ------------------------------------------------------------------
     # Validation helpers
@@ -181,3 +190,30 @@ class WienerNetzeSmartMeterCustomConfigFlow(config_entries.ConfigFlow, domain=DO
         return self.async_show_form(
             step_id="official", data_schema=OFFICIAL_AUTH_SCHEMA, errors=errors
         )
+
+
+class WienerNetzeSmartMeterOptionsFlow(config_entries.OptionsFlow):
+    """Per-entry options — currently just the price used for the cost statistic.
+
+    Deliberately does not assign ``self.config_entry`` in ``__init__``: recent
+    Home Assistant Core versions populate that attribute for you and warn on
+    (eventually reject) doing it yourself. The entry_id is stored instead and
+    the current entry is looked up fresh whenever needed.
+    """
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self._entry_id = config_entry.entry_id
+
+    async def async_step_init(self, user_input: Optional[dict[str, Any]] = None):
+        entry = self.hass.config_entries.async_get_entry(self._entry_id)
+        current_price = entry.options.get(CONF_PRICE_PER_KWH, PRICE_PER_KWH)
+
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_PRICE_PER_KWH, default=current_price): vol.Coerce(float),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)

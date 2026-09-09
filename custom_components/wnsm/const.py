@@ -6,10 +6,11 @@ DOMAIN = "wnsm"
 CONF_ZAEHLPUNKTE = "zaehlpunkte"
 
 # --- Cost tracking -----------------------------------------------------------
-# There is no config-flow field for this yet, so it is a plain constant.
-# Edit this to match your actual price per kWh (same currency/scale you would
-# enter in the Home Assistant Energy Dashboard's grid price field) if you want
-# the imported "<statistic_id>_cost" statistic to reflect your real tariff.
+# Configurable per config entry via the integration's Options flow
+# (Settings -> Devices & Services -> Wiener Netze Smartmeter -> Configure).
+# PRICE_PER_KWH below is only the fallback used when an entry has not set
+# one yet (e.g. entries created before this option existed).
+CONF_PRICE_PER_KWH = "price_per_kwh"
 PRICE_PER_KWH = 12.8272
 
 # --- Auth method selection (config flow) -----------------------------------

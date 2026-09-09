@@ -35,5 +35,16 @@
         }
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Wiener Netze Smartmeter — Options",
+        "description": "Price per kWh used to compute the '<statistic_id>_cost' statistic that's imported alongside your energy statistic. Use this as 'stat_cost' for your grid source in the Home Assistant Energy Dashboard (fixed/entity pricing is not supported there for external-statistics sources).",
+        "data": {
+          "price_per_kwh": "Price per kWh"
+        }
+      }
+    }
   }
 }

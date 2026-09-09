@@ -11,9 +11,12 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import UnitOfEnergy
 from homeassistant.util import slugify
 
+from decimal import Decimal
+
 from .AsyncSmartmeter import AsyncSmartmeter
 from .api.client_factory import make_client
 from .api.constants import ValueType
+from .const import CONF_PRICE_PER_KWH
 from .importer import Importer
 from .utils import before, today
 
@@ -97,7 +100,11 @@ class WNSMSensor(SensorEntity):
                 for reading_date in reading_dates:
                     meter_reading = await async_smartmeter.get_meter_reading_from_historic_data(self.zaehlpunkt, reading_date, datetime.now())
                     self._attr_native_value = meter_reading
-                importer = Importer(self.hass, async_smartmeter, self.zaehlpunkt, self.unit_of_measurement, self.granularity())
+                price_per_kwh = self._entry_data.get(CONF_PRICE_PER_KWH)
+                importer = Importer(
+                    self.hass, async_smartmeter, self.zaehlpunkt, self.unit_of_measurement, self.granularity(),
+                    price_per_kwh=Decimal(str(price_per_kwh)) if price_per_kwh is not None else None,
+                )
                 await importer.async_import()
             self._available = True
             self._updatets = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
