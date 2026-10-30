@@ -269,16 +269,21 @@ async def test_import_statistics_returns_none_when_nothing_to_import():
 @pytest.mark.asyncio
 async def test_import_statistics_writes_accumulated_statistics():
     importer = _importer(ValueType.QUARTER_HOUR)
+    importer.price_per_kwh = Decimal("0.25")
     reading = _value(START, 4.0)
     importer.async_smartmeter.get_bewegungsdaten.return_value = _data("KWH", [reading])
 
     with patch("wnsm.importer.async_add_external_statistics") as write:
-        total = await importer._import_statistics(start=START, end=END, total_usage=Decimal("10"))
+        total = await importer._import_statistics(start=START, end=END, total_usage=Decimal("10"),
+                                                  total_cost=Decimal("2"))
 
     assert total == Decimal("14.0")
-    write.assert_called_once()
-    _hass_arg, _metadata, statistics = write.call_args.args
+    assert write.call_count == 2
+    (_hass_arg, metadata, statistics), (_hass_arg, cost_metadata, cost_statistics) = [c.args for c in write.call_args_list]
+    assert metadata["statistic_id"] == importer.id
     assert statistics == [StatisticData(start=START, sum=Decimal("14.0"), state=4.0)]
+    assert cost_metadata["statistic_id"] == importer.cost_id
+    assert cost_statistics == [StatisticData(start=START, sum=Decimal("3.0"), state=1.0)]
 
 
 def test_get_statistics_metadata():
@@ -444,7 +449,7 @@ async def test_initial_import_statistics_recovers_quarter_hour():
     result = await importer._initial_import_statistics()
 
     assert result == Decimal("1.0")
-    importer._import_statistics.assert_awaited_once_with(recover_quarter_hour=True)
+    importer._import_statistics.assert_awaited_once_with(total_cost=Decimal(0), recover_quarter_hour=True)
 
 
 @pytest.mark.asyncio
@@ -455,4 +460,5 @@ async def test_incremental_import_statistics_forwards_start_and_total():
     result = await importer._incremental_import_statistics(START, Decimal("1.0"))
 
     assert result == Decimal("2.0")
-    importer._import_statistics.assert_awaited_once_with(start=START, total_usage=Decimal("1.0"))
+    importer._import_statistics.assert_awaited_once_with(start=START, total_usage=Decimal("1.0"),
+                                                         total_cost=Decimal(0))
